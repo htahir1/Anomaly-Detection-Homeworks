@@ -6,15 +6,8 @@ from scipy import io
 from sklearn.neighbors import KernelDensity
 import numpy as np
 from sklearn.model_selection import KFold
-from scipy.spatial import distance
 from sklearn.neighbors import NearestNeighbors
 
-X_train = []
-X_test = []
-y_train = []
-y_test = []
-X_total = []
-y_total = []
 
 '''
     Helper functions
@@ -32,7 +25,7 @@ def import_data(file):
 
     # Flattening them out into one list
     labels = [item for sublist in labels for item in sublist]
-    labels = np.array(labels) # 183 are 1 (outliers) and 238 are 2 (inliers)
+    labels = np.array(labels)  # 183 are 1 (outliers) and 238 are 2 (inliers)
 
     return dataset, labels
 
@@ -45,49 +38,42 @@ def remove_anomalies(dataset, labels):
 '''
     Kernel Density Estimation using sci-kit learn
 '''
-def kernel_density():
-    # KDE
-    kde = KernelDensity(kernel='gaussian', bandwidth=1).fit(X_train)
+def kernel_density(X_train, y_train, X_test, y_test):
+    kde = KernelDensity(kernel='gaussian', bandwidth=2).fit(X_train)
     score_samples_log = kde.score_samples(X_test)
-    score_samples = np.exp(score_samples_log)
+    prediction = np.exp(score_samples_log)
 
-    # plt.plot(score_samples)
+    # plt.plot(prediction)
     # plt.show()
+
     accuracy = 0
 
-    for i in range(0, len(score_samples)):
-        if score_samples[i] == 0.0 and y_test[i] == 1:
+    for i in range(0, len(prediction)):
+        if prediction[i] == 0.0 and y_test[i] == 1:  # If prediction says hes abnormal and ground truth agrees
             accuracy += 1
-        if score_samples[i] != 0.0 and y_test[i] == 2:
+        if prediction[i] != 0.0 and y_test[i] == 2:  # If prediction says hes normal and ground truth agrees
             accuracy += 1
 
-    return accuracy/len(score_samples)
+    return accuracy/len(prediction)
 
 
 '''
     One Class SVM using sci-kit learn
 '''
-def one_class_svm():
-    total = len(y_test)
+def one_class_svm(X_train, y_train, X_test, y_test):
     correct = 0
 
-    clf = svm.OneClassSVM(nu=0.9)
+    clf = svm.OneClassSVM(kernel='poly', nu=0.3, shrinking=False, random_state=3)
     clf.fit(X_train)
     prediction = clf.predict(X_test)
-    # prediction = [1 if x == -1.0 else x for x in prediction]  # If its -1.0 then its an outlier
-    # prediction = [2 if x == 1.0 else x for x in prediction]  # If its 1.0 then its an inlier
 
-    for i in range(0, total):
-        if prediction[i] == -1.0 and y_test[i] == 1:
+    for i in range(0, len(prediction)):
+        if prediction[i] == -1.0 and y_test[i] == 1:  # If prediction says hes abnormal and ground truth agrees
             correct += 1
-        if prediction[i] == 1 and y_test[i] == 2:
+        if prediction[i] == 1.0 and y_test[i] == 2:  # If prediction says hes normal and ground truth agrees
             correct += 1
 
-    # print "Total Tests: {}".format(total)
-    # print "Correct Predictions: {}".format(correct)
-    # print "Accuracy: {}%".format(round((correct/total)*100, 2))
-
-    return correct/total
+    return correct/len(prediction)
 
 
 '''
@@ -107,12 +93,12 @@ def local_reachability_distance(nn_indices, distance_data, k):
     return 1 / (rd / k)
 
 
-def local_outlier_factor():
+def local_outlier_factor(X_train, y_train, X_test, y_test):
     # find k-nearest neighbours of a point
     lofs = []
     k = 3
-    nbrs = NearestNeighbors(n_neighbors=k+1, metric='euclidean').fit(X_total)
-    nn_distances, nn_indices = nbrs.kneighbors(X_total)
+    nbrs = NearestNeighbors(n_neighbors=k+1, metric='euclidean').fit(X_train)
+    nn_distances, nn_indices = nbrs.kneighbors(X_train)
 
     for index in nn_indices:
         point_index = index[0]
@@ -129,9 +115,9 @@ def local_outlier_factor():
     accuracy = 0
     threshold = 1.2
     for i in range(0, len(lofs)):
-        if lofs[i] > threshold and y_total[i] == 1:
+        if lofs[i] > threshold and y_train[i] == 1:
             accuracy += 1
-        if lofs[i] <= threshold and y_total[i] == 2:
+        if lofs[i] <= threshold and y_train[i] == 2:
             accuracy += 1
 
     return accuracy/len(lofs)
@@ -141,13 +127,13 @@ def local_outlier_factor():
     Main function. Start reading the code here
 '''
 def main():
-    # These are the global variables that will be used to hold labels and data
-    global X_test
-    global X_train
-    global y_train
-    global y_test
-    global X_total
-    global y_total
+    # These are the variables that will be used to hold labels and data
+    X_test = []
+    X_train = []
+    y_train = []
+    y_test = []
+    X_total = []
+    y_total = []
 
     # Number of splits for cross validation
     num_splits = 3
@@ -158,33 +144,33 @@ def main():
     # Make a kfold object that will split data into k training and test sets
     kfold = KFold(n_splits=num_splits)
 
-    # Define "classifiers" to be used
+    # Define classifiers to be used
     classifiers = {
         "Kernel Density Estimation": kernel_density,
-        "One Class SVM": one_class_svm}
+        "OneClass SVM": one_class_svm,
+        "Local Outlier Factor": local_outlier_factor
+    }
 
+    print '\n######################### Using cross validation #########################################\n'
     for name, classifier in classifiers.items():
         accuracy = 0
         for train_index, test_index in kfold.split(X_total):
-
-            # Use indices to seperate out training and test data
+            # Use indices to separate out training and test data
             X_train, X_test = X_total[train_index], X_total[test_index]
             y_train, y_test = y_total[train_index], y_total[test_index]
 
             # Every classifier returns an accuracy. We sum and average these for each one
-            accuracy += classifier()
+            accuracy += classifier(X_train, y_train, X_test, y_test)
 
         total = accuracy / num_splits
         print "Accuracy of {} is {} %".format(name, round((total)*100, 5))
 
-    accuracy = local_outlier_factor()
-    print "Accuracy of {} is {} %".format("Local Outlier Factor", round((accuracy) * 100, 5))
+
+    print '\n######################### Using training data as test data #########################################\n'
+    for name, classifier in classifiers.items():
+        accuracy = classifier(X_total, y_total, X_total, y_total)
+        print "Accuracy of {} is {} %".format(name, round((accuracy) * 100, 5))
 
 
 if __name__ == "__main__":
     main()
-
-
-    # estimator = stats.gaussian_kde(dataset)
-    #
-    # print estimator.evaluate(dataset)
