@@ -63,7 +63,7 @@ def kernel_density(X_train, y_train, X_test, y_test):
 def one_class_svm(X_train, y_train, X_test, y_test):
     correct = 0
 
-    clf = svm.OneClassSVM(kernel='poly', nu=0.3, shrinking=False, random_state=3)
+    clf = svm.OneClassSVM(kernel='poly', nu=0.6, shrinking=False, random_state=30)
     clf.fit(X_train)
     prediction = clf.predict(X_test)
 
@@ -83,32 +83,32 @@ def local_reachability_distance(nn_indices, distance_data, k):
     rd = 0
     point_index = nn_indices[0]
     neighbour_indices = nn_indices[1:k+1]
+    #
+    # for distance_index in range(0, len(neighbour_indices)):
+    #     true_distance = distance_data[point_index][distance_index + 1]  # Find actual distance
+    #     k_distance = max(distance_data[point_index]) #
+    #     rd += max(k_distance, true_distance)
+    #     distance_index += 1
 
-    for distance_index in range(0, len(neighbour_indices)):
-        true_distance = distance_data[point_index][distance_index + 1]
-        k_distance = max(distance_data[point_index])
-        rd += max(k_distance, true_distance)
-        distance_index += 1
-
-    return 1 / (rd / k)
+    return 1 / (max(distance_data[point_index]) / k)
 
 
 def local_outlier_factor(X_train, y_train, X_test, y_test):
     # find k-nearest neighbours of a point
     lofs = []
-    k = 3
-    nbrs = NearestNeighbors(n_neighbors=k+1, metric='euclidean').fit(X_train)
+    k = 10
+    nbrs = NearestNeighbors(n_neighbors=k+1, metric='euclidean').fit(X_train)  # Find nearest neighbours
     nn_distances, nn_indices = nbrs.kneighbors(X_train)
 
-    for index in nn_indices:
-        point_index = index[0]
-        neighbour_indices = index[1:k+1]
+    for index in nn_indices:  # For all points
+        point_index = index[0]  # The first one is the point itself
+        neighbour_indices = index[1:k+1]  # The rest are the nearest neighbors
 
         lrd_sum = 0
-        for neighbour_index in neighbour_indices:
+        for neighbour_index in neighbour_indices:  # All neighbors of neighbors
             lrd_sum += local_reachability_distance(nn_indices[neighbour_index], nn_distances, k)
 
-        normalized_lrd_n = lrd_sum / k
+        normalized_lrd_n = lrd_sum / k  # Take average of LRD's of all neighbor of neighbors
         lrd_point = local_reachability_distance(nn_indices[point_index], nn_distances, k)
         lofs.append(normalized_lrd_n / lrd_point)
 
@@ -151,6 +151,13 @@ def main():
         "Local Outlier Factor": local_outlier_factor
     }
 
+    print '\n######################### Using dataset without anomalies #######################################\n'
+    X_total_t = remove_anomalies(X_total, y_total)
+    for name, classifier in classifiers.items():
+        accuracy = classifier(X_total_t, y_total, X_total_t, y_total)
+        print "Accuracy of {} is {} %".format(name, round((accuracy) * 100, 5))
+
+
     print '\n######################### Using cross validation #########################################\n'
     for name, classifier in classifiers.items():
         accuracy = 0
@@ -170,6 +177,7 @@ def main():
     for name, classifier in classifiers.items():
         accuracy = classifier(X_total, y_total, X_total, y_total)
         print "Accuracy of {} is {} %".format(name, round((accuracy) * 100, 5))
+
 
 
 if __name__ == "__main__":
